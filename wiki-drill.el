@@ -22,11 +22,12 @@
 (defcustom wiki-drill--file "~/wiki-drill.org"
   "File to store drill entries and read tags from")
 
-(defcustom wiki-drill--custom-clozer ("test")
+(defcustom wiki-drill--custom-clozer '("test")
   "A list of custom clozer types provided by the user")
 
 (defun wiki-drill/get-text-from-buffer (buffer)
   "Pull text from a given buffer")
+
 (defun wiki-drill/make-flash (type text)
   "Given a flashcard type and text, generate a card"
   (if (eq type "simple") (wiki-drill/make-flash-simple text) nil)
@@ -55,22 +56,23 @@
 
 (defun wiki-drill/clozer-brackets ()
   "Surrounds with [[words||hint]]"
-  (let* ((beg region-beginning)
-         (end region-end))
-    (if (eq beg end)
-        (EXPAND WORD EXTENTS AND RECURSE) ;; no region, expand and recurse
-      (progn (goto-char beg) (insert "[[")
-             (goto-char end) (insert "||<hint>]]")))))
-
+  (let (pos1 pos2 bds)
+    (if (use-region-p)
+        (setq pos1 (region-beginning) pos2 (region-end))
+      (progn
+        (setq bds (bounds-of-thing-at-point 'symbol))
+        (setq pos1 (car bds) pos2 (cdr bds))))
+    (goto-char pos2) (insert "||<hint>]")
+    (goto-char pos1) (insert "[")
+    (goto-char (+ pos2 4))))
 
 (define-minor-mode clozer-mode
        "Toggles clozer bracketing mode"
        :init-value nil
        :lighter " clozer"
-       :keymap
-       '(([left] . wiki-drill/clozer-brackets)
-         ([return] . clozer-mode)))
-
+       :keymap (let ((map (make-sparse-keymap)))
+                 (define-key map (kbd "C-b") (lambda () (interactive) (wiki-drill/clozer-brackets)))
+                 (define-key map (kbd "RET") 'clozer-mode) map))
 
 (defun wiki-drill/make-flash-clozer-usertext ()
   "Given a buffer of text for clozer type, let the user mark words"
@@ -78,17 +80,18 @@
          (buf (generate-new-buffer flashbuff)))
     (with-current-buffer "*wiki-summary*"
       (setq inhibit-read-only t)
-      (let ((comment-str ";; Surround words or phrases with double brackets, and leave hints with bars\n;; e.g. [[hide these words||drop this hint]]\n\n"))
-        (put-text-property 0 (length comment-str) 'face 'font-lock-comment-face current-string)
-        (insert current-string))
+      (let ((comment-str ";; Mark keywords or regions with brackets (C-b), and leave hints with bars\n;; e.g. [hide these words||drop this hint]\n\n"))
+        (put-text-property 0 (length comment-str) 'face 'font-lock-comment-face comment-str)
+        (insert comment-str))
       ;; switch text to that of flashcard
-      (buffer-swap-text buf)
+      (buffer-swap-text buf) 
 ;;      (barf-if-buffer-read-only)
 ;;      (fill-paragraph)
 ;;      (goto-char (point-min))
 ;;      (text-mode)
 ;;      (view-mode))
-    (pop-to-buffer buf))))
+      (pop-to-buffer buf)
+      (clozer-mode 1))))
 
 (defun test-wiki ()
   (progn
@@ -102,8 +105,7 @@
 
 
 (defun wiki-drill/make-flash-clozer (text)
-  "Makes a clozer flashcard"
-
+  "Makes a clozer flashcard")
 
 
 
