@@ -19,19 +19,22 @@
 
 (require 'wiki-summary)
 
-(defcustom wiki-drill--file "~/wiki-drill.org"
-  "File to store drill entries and read tags from")
+(defcustom wiki-drill--binding-clozer-mark "C-c C-b"
+  "Binding to mark words or phrases in clozer minor mode")
+
+(defcustom wiki-drill--binding-submit "C-c C-k"
+  "Binding to submit flashcard")
 
 (defcustom wiki-drill--custom-clozer '("test")
   "A list of custom clozer types provided by the user")
 
-(defun wiki-drill/get-text-from-buffer (buffer)
-  "Pull text from a given buffer")
+(defcustom wiki-drill--file "~/wiki-drill-inputs.org"
+  "File to temprarily store drill entries. It is then up to the user to refile these entries.")
 
-(defun wiki-drill/make-flash (type text)
-  "Given a flashcard type and text, generate a card"
-  (if (eq type "simple") (wiki-drill/make-flash-simple text) nil)
-  (if (eq type "clozer") (wiki-drill/make-flash-clozer text) nil))
+(defun wiki-drill/drill-file-touch ()
+  "Touches drill file, creates it if not there"
+  (if (not (file-exists-p wiki-drill--file))
+      (write-region "" nil wiki-drill--file)))
 
 (defun wiki-drill/offer-clozer-choices ()
   "Offers a choice of clozer categories to the user"
@@ -47,12 +50,10 @@
          wiki-drill--custom-clozer)))
     (ido-completing-read "Clozer Types:" choices)))
 
-(defun wiki-drill/make-flash-clozer-header ()
+(defun wiki-drill/make-flash-clozer-header (clozer-type)
   "Makes the PROPERTIES header part of a clozer flashcard
    using a selection of types offered to the user"
-  (let ((clozer-type (wiki-drill/offer-clozer-choices)))
-    (format ":PROPERTIES:\n:DRILL_CARD_TYPE:%s\n:END:" clozer-type)))
-
+  (format ":PROPERTIES:\n:DRILL_CARD_TYPE:%s\n:END:" clozer-type))
 
 (defun wiki-drill/clozer-brackets ()
   "Surrounds with [[words||hint]]"
@@ -71,42 +72,74 @@
        :init-value nil
        :lighter " clozer"
        :keymap (let ((map (make-sparse-keymap)))
-                 (define-key map (kbd "C-b") (lambda () (interactive) (wiki-drill/clozer-brackets)))
-                 (define-key map (kbd "RET") 'clozer-mode) map))
+                 (define-key map (kbd wiki-drill--binding-clozer-mark)
+                   (lambda () (interactive) (wiki-drill/clozer-brackets)))
+                 (define-key map (kbd wiki-drill--binding-submit)
+                   (lambda () (interactive) (wiki-drill/clozer-submit)))
+                 ;;                 (define-key map (kbd "RET") 'clozer-mode)
+                 map))
 
-(defun wiki-drill/make-flash-clozer-usertext ()
+(defun wiki-drill/make-flash (type)
+  "Given a flashcard type and text, generate a card"
+  (if (string= type "simple") (wiki-drill/make-flash-simple))
+  (if (string= type "clozer") (wiki-drill/make-flash-clozer)))
+
+(defun wiki-drill/make-flash-simple ()
+  "Given a buffer of text for simple type, let the user mark words")
+
+(defun wiki-drill/make-flash-clozer ()
   "Given a buffer of text for clozer type, let the user mark words"
   (let* ((flashbuff "*FlashCard*")
          (buf (generate-new-buffer flashbuff)))
     (with-current-buffer "*wiki-summary*"
       (setq inhibit-read-only t)
-      (let ((comment-str ";; Mark keywords or regions with brackets (C-b), and leave hints with bars\n;; e.g. [hide these words||drop this hint]\n\n"))
+      (let ((comment-str
+             (concat ";; Mark keywords or regions with brackets ("
+                     wiki-drill--binding-clozer-mark
+                     "), and leave hints with\n;; bars, submit with ("
+                     wiki-drill--binding-submit
+                     ")   e.g. [hide these words||drop this hint]\n\n")))
         (put-text-property 0 (length comment-str) 'face 'font-lock-comment-face comment-str)
         (insert comment-str))
-      ;; switch text to that of flashcard
-      (buffer-swap-text buf) 
-;;      (barf-if-buffer-read-only)
-;;      (fill-paragraph)
-;;      (goto-char (point-min))
-;;      (text-mode)
-;;      (view-mode))
+      (buffer-swap-text buf)      ;; switch text to that of flashcard
       (pop-to-buffer buf)
       (clozer-mode 1))))
+
+(defun wiki-drill/flashcard-submit ()
+  "Submit flashcard")
+
+
+(defun good-test (subject)
+  ;; wiki-summary "subject"
+  ;; prompt for type: simple|clozer
+  ;; if simple:
+  ;;    nothing for now
+  ;; if clozer:
+  ;;    prompt for clozer types
+  ;;    make clozer header
+  ;;    offer user text to mark
+  ;;    place into drill-file for user to refile
+  (wiki-summary subject)
+  (let (type (wiki-drill/offer-flashcard-choices))
+    (if (string= type "simple") (message "do nothing for now"))
+    (if (string= type "clozer")
+        (let* ((clozer-type (wiki-drill/offer-clozer-choices))
+               (clozer-head (wiki-drill/make-flash-clozer-header clozer-type))
+               (flash-text (wiki-drill/make-flash-clozer)))
+          (place-into-drill-file subject clozer-head flash-text)))))
+
+
+
 
 (defun test-wiki ()
   (progn
     (when (get-buffer "*wiki-summary*") (kill-buffer "*wiki-summary*"))
     (when (get-buffer "*FlashCard*" ) (kill-buffer "*FlashCard*"))
-    (wiki-summary "RNA")
-    (sit-for 1)
-    (wiki-drill/make-flash-clozer-usertext)))
+    (progn (wiki-summary "RNA")
+           (sit-for 0.3)
+           (wiki-drill/make-flash "clozer" ))))
 
 (test-wiki)
-
-
-(defun wiki-drill/make-flash-clozer (text)
-  "Makes a clozer flashcard")
-
 
 
 (defun wiki-drill/insert-flash-to-file (flash)
