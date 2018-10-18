@@ -128,7 +128,7 @@
                (flash-text (wiki-drill/make-flash-clozer)))
           (place-into-drill-file subject clozer-head flash-text)))))
 
-
+(good-test "Lawton railway station")
 
 
 (defun test-wiki ()
