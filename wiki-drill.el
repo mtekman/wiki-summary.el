@@ -19,10 +19,10 @@
 
 (require 'wiki-summary)
 
-(defcustom wiki-drill--binding-clozer-mark "C-c C-b"
+(defcustom wiki-drill--binding-clozer-mark "C-b"
   "Binding to mark words or phrases in clozer minor mode")
 
-(defcustom wiki-drill--binding-submit "C-c C-k"
+(defcustom wiki-drill--binding-submit "C-c C-c"
   "Binding to submit flashcard")
 
 (defcustom wiki-drill--custom-clozer '("test")
@@ -105,22 +105,29 @@
       (pop-to-buffer buf)
       (clozer-mode 1))))
 
-(defun wiki-drill/flashcard-submit ()
-  "Submit flashcard")
+(defun wiki-drill/flashcard-submit ()  
+  "Submit flashcard. Essentially return contents of flashcard buffer"
+  (when (get-buffer "*FlashCard*")
+    (progn (set-buffer "*FlashCard*")
+           (goto-char 0)
+           (let* ((start (search-forward-regexp "^[^;]"))
+                  (end (end-of-buffer)))
+             (buffer-substring start end)))))
 
+(wiki-drill/flashcard-submit) ;; TESTING
 
+(defun wiki-drill/offer-flashcard-choices ()
+  "Offers simple or clozer type to user"
+  (sit-for 1)
+  (select-frame-set-input-focus (window-frame (active-minibuffer-window)))
+  (ido-completing-read "Flashcard Type:" '("simple" "clozer")))
+  
 (defun good-test (subject)
-  ;; wiki-summary "subject"
-  ;; prompt for type: simple|clozer
-  ;; if simple:
-  ;;    nothing for now
-  ;; if clozer:
-  ;;    prompt for clozer types
-  ;;    make clozer header
-  ;;    offer user text to mark
-  ;;    place into drill-file for user to refile
   (wiki-summary subject)
-  (let (type (wiki-drill/offer-flashcard-choices))
+  (when (get-buffer "*wiki-summary*") (kill-buffer "*wiki-summary*"))
+  (when (get-buffer "*FlashCard*" ) (kill-buffer "*FlashCard*"))
+  (sit-for 0.1)
+  (let ((type (wiki-drill/offer-flashcard-choices)))
     (if (string= type "simple") (message "do nothing for now"))
     (if (string= type "clozer")
         (let* ((clozer-type (wiki-drill/offer-clozer-choices))
