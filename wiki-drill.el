@@ -19,6 +19,8 @@
 
 (require 'wiki-summary)
 
+(setq wiki-drill--tmp-subject nil)
+(setq wiki-drill--tmp-type nil)
 
 ;; --- File operations
 (defcustom wiki-drill--file "~/wiki-drill-inputs.org"
@@ -27,6 +29,10 @@
   "Touches drill file, creates it if not there"
   (if (not (file-exists-p wiki-drill--file))
       (write-region "" nil wiki-drill--file)))
+(defun wiki-drill/refile-into-file (text)
+  "Refile into text"
+  (progn (wiki-drill/drill-file-touch)
+         (write-region text nil wiki-drill--file 'append)))
 
 
 ;; -- FlashCard buffer
@@ -38,27 +44,33 @@
       (get-buffer wiki-drill--flashcardbuffer)
     (generate-new-buffer wiki-drill--flashcardbuffer)))
 
+
 ;; --- Clozer Flashcard Functions
 (defcustom wiki-drill--custom-clozer '("test")
   "A list of custom clozer types provided by the user")
-(defun wiki-drill/offer-clozer-choices ()
-  "Offers a choice of clozer categories to the user"
+(defun wiki-drill/offer-flashcard-choices ()
+  "Offers a choice of categories to the user"
   (let ((choices
          (append
-         '("hide1cloze"      ;; hides 1 at random, shows all others
-           "show1cloze"      ;; shows 1 at random, hides all others
-           "hide2cloze"      ;; hides 2 at random, shows all others
-           "show2cloze"      ;; shows 2 at random, hides all others
-           "hide1_firstmore" ;; hides 1st 75% of the time, shows all others
-           "show1_firstless" ;; shows 1st 25% of the time, hides all others
-           "show1_lastmore") ;; shows last 75% of the time, hides all others
-         wiki-drill--custom-clozer)))
-    (ido-completing-read "Clozer Types:" choices)))
-(defun wiki-drill/make-flash-clozer-header (clozer-type)
-  "Makes the PROPERTIES header part of a clozer flashcard
-   using a selection of types offered to the user"
-  (format ":PROPERTIES:\n:DRILL_CARD_TYPE:%s\n:END:" clozer-type))
-(defun wiki-drill/make-flash-clozer ()
+          '("simple"
+            "hide1cloze"      ;; hides 1 at random, shows all others
+            "show1cloze"      ;; shows 1 at random, hides all others
+            "hide2cloze"      ;; hides 2 at random, shows all others
+            "show2cloze"      ;; shows 2 at random, hides all others
+            "hide1_firstmore" ;; hides 1st 75% of the time, shows all others
+            "show1_firstless" ;; shows 1st 25% of the time, hides all others
+            "show1_lastmore") ;; shows last 75% of the time, hides all others
+          wiki-drill--custom-clozer)))
+    (progn (sit-for 1)
+           (select-frame-set-input-focus (window-frame (active-minibuffer-window)))
+           (ido-completing-read "Clozer Types:" choices))))
+(defun wiki-drill/make-flash (subject)
+  "Offer the user flashcard"
+  (let* ((flash-type (wiki-drill/offer-flashcard-choices)))
+    (setq wiki-drill--tmp-subject subject)
+    (setq wiki-drill--tmp-type flash-type)
+    (wiki-drill/make-flash-clozer-usertext)))
+(defun wiki-drill/make-flash-clozer-usertext ()
   "Pull text from wiki-summary into FlashCard, let the user mark words"
   (let* ((flashbuff (wiki-drill/get-flashcard-buffer)))
     (sit-for 0.1)
@@ -71,10 +83,21 @@
                      wiki-drill--binding-submit
                      ")   e.g. [hide these words||drop this hint]\n\n")))
         (put-text-property 0 (length comment-str) 'face 'font-lock-comment-face comment-str)
-        (insert comment-str))
-      (buffer-swap-text buf)      ;; switch text to that of flashcard
-      (pop-to-buffer buf)
-      (clozer-mode 1))))
+        (insert comment-str)
+        (progn (buffer-swap-text flashbuff)      ;; switch text to that of flashcard
+               (pop-to-buffer flashbuff)
+               (clozer-mode 1))))))
+(defun wiki-drill/total-text (subject type body)
+  "Put together the header and body"
+  (format "\
+* %s     :drill:
+   :PROPERTIES:
+   :DRILL_CARD_TYPE: %s
+   :END:
+
+** Definition:
+%s
+" subject type body))
 
 
 ;; --- Clozer Mode Functions --
@@ -104,27 +127,8 @@
               (lambda () (interactive) (wiki-drill/clozer-submit)))
             ;;                 (define-key map (kbd "RET") 'clozer-mode)
             map))
-(defun wiki-drill/generate-clozer ()
-  "Generate Clozer text"
-  (message "clozer - not now")
-  (let* ((clozer-type (wiki-drill/offer-clozer-choices))
-         (clozer-head (wiki-drill/make-flash-clozer-header clozer-type))
-         (flash-text (wiki-drill/get-flashcard-text))
-         (total-text subject clozer-head flash-text))
-    (place-into-drill-file total-text)))
 
-;; --- General FlashCard functions
-(defun wiki-drill/make-flash (type)
-  "Given a flashcard type and text, generate a card"
-  (when (string= type "simple")
-    (wiki-drill/make-flash-simple))
-  (when (string= type "clozer")
-    (wiki-drill/make-flash-clozer)))  ;;works
-(defun wiki-drill/offer-flashcard-choices ()
-  "Offers simple or clozer type to user"
-  (sit-for 1)
-  (select-frame-set-input-focus (window-frame (active-minibuffer-window)))
-  (ido-completing-read "Flashcard Type:" '("simple" "clozer")))
+;; --- Submitting a flashcard
 (defun wiki-drill/get-flashcard-text ()
   "Get non-commented text from FlashCard buffer"
   (with-current-buffer (wiki-drill/get-flashcard-buffer)
@@ -134,30 +138,26 @@
       (buffer-substring-no-properties
        (search-forward-regexp "^[^;$]")
        (point-max)))))
-
-
-(wiki-drill/make-flash "clozer")
-
- (lambda() message "simple")
- (lambda() message "clozer"))
-
-
-
-(defun good-test (subject)
-  (wiki-summary subject)
+(defun wiki-drill/clozer-submit ()
+  "Pulls text from Flashcard and calls refiler"
+  (let* ((user-text (wiki-drill/get-flashcard-text))
+         (total-text (wiki-drill/total-text
+                      wiki-drill--tmp-subject
+                      wiki-drill--tmp-type
+                      user-text)))
+    (progn (wiki-drill/refile-into-file total-text)
+           (wiki-drill/kill-all-buffers)
+           (switch-to-buffer (find-file wiki-drill--file)))))
+(defun wiki-drill/kill-all-buffers ()
+  "Kill buffers related to wiki-summary and FlashCard"
   (when (get-buffer "*wiki-summary*") (kill-buffer "*wiki-summary*"))
-  (when (get-buffer "*FlashCard*" ) (kill-buffer "*FlashCard*"))
-  (let ((type (wiki-drill/offer-flashcard-choices)))
-    (wiki-drill/make-flash type)))
+  (when (get-buffer "*FlashCard*" ) (kill-buffer "*FlashCard*")))
+  
+(defun wiki-drill (subject)
+  (wiki-summary subject)
+  (wiki-drill/kill-all-buffers)
+  (wiki-drill/make-flash subject))
 
-(good-test "Lawton railway station")
 
-
-(defun test-wiki ()
-  (progn
-    (when (get-buffer "*wiki-summary*") (kill-buffer "*wiki-summary*"))
-    (when (get-buffer "*FlashCard*" ) (kill-buffer "*FlashCard*"))
-    (progn (wiki-summary "RNA")
-           (sit-for 0.3)
-           (wiki-drill/make-flash "clozer" ))))
-(test-wiki)
+(wiki-drill "Lawton railway station")
+;; (wiki-drill "RNA")
