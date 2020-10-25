@@ -1,3 +1,11 @@
+### This repo has migrated to GitLab
+https://gitlab.com/mtekman/wiki-summary.el
+###### (The copy here is archived. Please see the above link for the latest developments)
+
+********
+
+
+
 ## wiki-summary.el
 
 [![MELPA](http://melpa.org/packages/wiki-summary-badge.svg)](http://melpa.org/#/wiki-summary)
